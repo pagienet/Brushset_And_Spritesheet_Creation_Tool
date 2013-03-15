@@ -82,6 +82,7 @@ package
 			//bitmap.pixelSnapping = PixelSnapping.ALWAYS;
 			bitmap.width = 100;
 			bitmap.scaleY = bitmap.scaleX;
+			if ( bitmap.scaleY > 1 ) bitmap.scaleY = bitmap.scaleX = 1;
 			//bitmap.cacheAsBitmapMatrix = bitmap.transform.matrix;
 			//bitmap.cacheAsBitmap = true;
 			

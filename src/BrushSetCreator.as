@@ -3,9 +3,12 @@ package
 	import com.bit101.components.CheckBox;
 	import com.bit101.components.ComboBox;
 	import com.bit101.components.HBox;
+	import com.bit101.components.HUISlider;
 	import com.bit101.components.Label;
 	import com.bit101.components.NumericStepper;
+	import com.bit101.components.Panel;
 	import com.bit101.components.PushButton;
+	import com.bit101.components.VBox;
 	import com.bit101.components.Window;
 	
 	import flash.display.Bitmap;
@@ -22,6 +25,7 @@ package
 	import flash.filesystem.File;
 	import flash.filesystem.FileStream;
 	import flash.geom.ColorTransform;
+	import flash.geom.Matrix;
 	import flash.geom.Point;
 	import flash.geom.Rectangle;
 	import flash.net.FileFilter;
@@ -32,6 +36,10 @@ package
 	public class BrushSetCreator extends Sprite
 	{
 		private var navHolder:HBox;
+		
+		private var settingsHolder:Window;
+		
+		
 		private var folderPreview:DynamicImageTable;
 		private var presets:BrushSetCreatorPreset;
 		private var brushSizes:ComboBox;
@@ -59,6 +67,8 @@ package
 		private var shiftIsPressed:Boolean;
 		private var backgroundColor:ComboBox;
 		private var allowUpscale:CheckBox;
+		private var cellRotation:HUISlider;
+		private var cellScale:HUISlider;
 		
 		
 		public function BrushSetCreator()
@@ -180,7 +190,56 @@ package
 			
 			addChild(grid);
 			
+			settingsHolder = new Window(this,700,320,"Cell Settings");
+			settingsHolder.width = 300;
+			var vb2:VBox = new VBox( settingsHolder,0,0 );
+			cellRotation = new HUISlider(vb2,0,0,"Rotation",onCellSettingsChanged );
+			cellRotation.minimum = - 180;
+			cellRotation.maximum = 180;
+			cellRotation.value = 0;
 			
+			cellScale = new HUISlider(vb2,0,0,"Scale Correction",onCellSettingsChanged );
+			cellScale.minimum = 10;
+			cellScale.maximum = 200;
+			cellScale.value = 0;
+			settingsHolder.visible = false;
+		}
+		
+		private function onCellSettingsChanged(event:Event ):void
+		{
+			if ( currentGridSelection  != null)
+			{
+				var placement:BrushPlacementInfo = placements[currentRowIndex][currentColumnIndex];
+				
+				placement.scale = cellScale.value /100;
+				
+				var map:Bitmap = placement.map;
+				map.rotation = 0;
+				map.scaleX = map.scaleY = 1;
+				map.scaleX = map.scaleY = Math.min(( columnWidth - presets.padding * 2) / map.bitmapData.width, (rowHeight  - presets.padding * 2)/ map.bitmapData.height) * placement.scale;
+				if ( !presets.allowUpscale && map.scaleX > 1 ) map.scaleX = map.scaleY = 1;
+				
+				placement.rotation = cellRotation.value / 180 * Math.PI;
+				
+				var m:Matrix = new Matrix();
+				m.translate( -map.bitmapData.width*0.5,-map.bitmapData.height*0.5);
+				m.rotate( placement.rotation );
+				m.scale(map.scaleX,map.scaleY);
+				m.translate((currentColumnIndex * columnWidth + columnWidth * 0.5 ) ,(currentRowIndex * rowHeight + rowHeight * 0.5 )); 
+				map.transform.matrix = m;
+				
+			
+			}
+				
+			
+		}
+		
+		private function updateSettingsHolder():void
+		{
+			var placement:BrushPlacementInfo = placements[currentRowIndex][currentColumnIndex];
+			
+			cellRotation.value = placement.rotation * 180 / Math.PI;
+			cellScale.value = placement.scale * 100;
 		}
 		
 		private function onTextureChanged(event:Event):void
@@ -194,29 +253,38 @@ package
 			if ( placements != null )
 			{
 				var addIdx:int = 0;
+				var removeExtras:Boolean = false;
 				for ( var row:int = 0; row < presets.rows ; row++ )
 				{
 					for ( var col:int = 0; col < presets.columns ; col++ )
 					{
 						if ( placements[row][col] != null )
 						{
-							if ( presets.rows == rows.value && presets.columns == columns.value )
+							if (!removeExtras )
 							{
-								newPlacements[row][col] =  placements[row][col];
-								
-							} else {
-						
-								newPlacements[int(addIdx / columns.value)][addIdx%columns.value] =  placements[row][col];
-								addIdx++;
-								if ( addIdx == columns.value * rows.value )
+								if ( presets.rows == rows.value && presets.columns == columns.value )
 								{
-									row =  presets.rows;
-									break;
+									newPlacements[row][col] =  placements[row][col];
+									
+								} else {
+							
+									newPlacements[int(addIdx / columns.value)][addIdx%columns.value] =  placements[row][col];
+									addIdx++;
+									if ( addIdx == columns.value * rows.value )
+									{
+										removeExtras = true;
+									}
 								}
+							} else {
+								placements[row][col].mask.parent.removeChild(placements[row][col].mask);
+								placements[row][col].map.parent.removeChild(placements[row][col].map);
+								placements[row][col] = null;
 							}
 						}
 					}
 				}
+				
+				
 			}
 			placements = newPlacements;
 			// TODO Auto Generated method stub
@@ -227,6 +295,7 @@ package
 			presets.allowUpscale = allowUpscale.selected;
 			updateBrush();
 			
+			var m:Matrix = new Matrix();
 			
 			for ( row = 0; row < presets.rows ; row++ )
 			{
@@ -236,15 +305,38 @@ package
 					{
 						var map:Bitmap = placements[row][col].map;
 						map.scaleX = map.scaleY = 1;
-						map.scaleX = map.scaleY = Math.min(( columnWidth - presets.padding * 2) / map.width, (rowHeight  - presets.padding * 2)/ map.height);
+						map.scaleX = map.scaleY = Math.min(( columnWidth - presets.padding * 2) / map.bitmapData.width, (rowHeight  - presets.padding * 2)/ map.bitmapData.height) * placements[row][col].scale;
 						if ( !presets.allowUpscale && map.scaleX > 1 ) map.scaleX = map.scaleY = 1;
-						map.x = (col * columnWidth + columnWidth * 0.5 - map.width * 0.5) ;
-						map.y = (row * rowHeight + rowHeight * 0.5  - map.height * 0.5);
+						m.identity();
+						m.translate( -map.bitmapData.width*0.5,-map.bitmapData.height*0.5);
+						m.rotate( placements[row][col].rotation );
+						m.scale(map.scaleX,map.scaleY);
+						m.translate((col * columnWidth + columnWidth * 0.5 ) ,(row * rowHeight + rowHeight * 0.5 )); 
+						map.transform.matrix = m;
+						
+						
+						
+						//map.x = (col * columnWidth + columnWidth * 0.5 - map.width * 0.5) ;
+						//map.y = (row * rowHeight + rowHeight * 0.5  - map.height * 0.5);
 				
+						var cellMask:Shape = placements[row][col].mask;
+						cellMask.graphics.clear();
+						cellMask.graphics.beginFill(0xff0000);
+						cellMask.graphics.drawRect(presets.padding,presets.padding,columnWidth-presets.padding * 2,rowHeight-presets.padding * 2);
+						
+						cellMask.graphics.endFill();
+						cellMask.x = col * columnWidth;
+						cellMask.y = row * rowHeight;
+						
 					}
 				}
 			}
-			
+			if ( currentGridSelection != null )
+			{
+				currentGridSelection.transform.colorTransform =  new ColorTransform();
+				currentGridSelection = null;
+				settingsHolder.visible = false;
+			}
 		}
 		
 		private function onPresetsChanged():void
@@ -326,8 +418,17 @@ package
 		
 		protected function onMouseDown( event:MouseEvent ):void
 		{
+			
+			if( event.target.parent && event.target.parent is Panel ) return;
+			
 			if ( folderPreview.hitTestPoint(event.stageX,event.stageY) )
 			{
+				if ( currentGridSelection !=null )
+				{
+					settingsHolder.visible = false;
+					currentGridSelection.transform.colorTransform =  new ColorTransform();
+					currentGridSelection = null;
+				}
 				var selection:Bitmap = folderPreview.getBitmapAtPoint(new Point(event.stageX,event.stageY));
 				if ( selection != null )
 				{
@@ -364,6 +465,7 @@ package
 					{
 						currentGridSelection.transform.colorTransform =  new ColorTransform();
 						currentGridSelection = null;
+						settingsHolder.visible = false;
 					}
 					var result:Array = stage.getObjectsUnderPoint(new Point(event.stageX,event.stageY));
 					for ( var i:int = 0; i < result.length; i++ )
@@ -373,16 +475,21 @@ package
 						{
 							currentGridSelection = result[i] as Bitmap;
 							currentGridSelection.transform.colorTransform = new ColorTransform(1,1,1,1,80,0,0,128);
+							currentColumnIndex = placementHolder.mouseX / columnWidth;
+							currentRowIndex = placementHolder.mouseY / rowHeight;
+							settingsHolder.visible = true;
+							updateSettingsHolder();
 							break;
 						}
 					}
 				} else {
-					if ( event.stageY > 32 )
+					if ( event.stageY > 32 && event.target == stage )
 					{
 						if ( currentGridSelection !=null )
 						{
 							currentGridSelection.transform.colorTransform =  new ColorTransform();
 							currentGridSelection = null;
+							settingsHolder.visible = false;
 						}
 					}
 				}
@@ -390,6 +497,8 @@ package
 			} 
 			
 		}
+		
+		
 		
 		protected function onMouseWheel(event:MouseEvent):void
 		{
@@ -441,18 +550,31 @@ package
 				placementHolder.addChild( holder);
 				placements[currentRowIndex][currentColumnIndex].map = holder;
 				placements[currentRowIndex][currentColumnIndex].scale = 1;
+				
+				var cellMask:Shape = new Shape();
+				cellMask.graphics.beginFill(0xff0000);
+				cellMask.graphics.drawRect(presets.padding,presets.padding,columnWidth-presets.padding * 2,rowHeight-presets.padding * 2);
+				cellMask.graphics.endFill();
+				cellMask.x = currentColumnIndex*columnWidth;
+				cellMask.y = currentRowIndex* rowHeight;
+				placements[currentRowIndex][currentColumnIndex].mask = cellMask;
+				placementHolder.addChild(cellMask);
+				holder.mask = cellMask;
+				
 			} else {
 				var gridInfo:BrushPlacementInfo = placements[currentRowIndex][currentColumnIndex];
 				gridInfo.map.bitmapData = dragBitmap.bitmapData;
 				gridInfo.map.smoothing = true;
+				gridInfo.map.rotation = 0;
 				gridInfo.map.scaleX = gridInfo.map.scaleY = 1;
 				gridInfo.map.scaleX = gridInfo.map.scaleY = Math.min(( columnWidth - presets.padding * 2) / gridInfo.map.width, (rowHeight  - presets.padding * 2)/ gridInfo.map.height) * gridInfo.scale;
 				
 				gridInfo.map.x = (currentColumnIndex * columnWidth + columnWidth * 0.5 - dragBitmap.width * 0.5);
 				gridInfo.map.y = (currentRowIndex * rowHeight + rowHeight * 0.5  - dragBitmap.height * 0.5);
+				gridInfo.map.mask = gridInfo.mask;
 			}
 			placements[currentRowIndex][currentColumnIndex].rotation = 0;
-			
+			placements[currentRowIndex][currentColumnIndex].scale = 1;
 		}
 		
 		protected function dragSelection(event:MouseEvent):void
